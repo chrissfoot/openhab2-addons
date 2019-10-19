@@ -21,6 +21,7 @@ import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.smarthome.config.core.Configuration;
+import org.eclipse.smarthome.core.library.types.OnOffType;
 import org.eclipse.smarthome.core.thing.Bridge;
 import org.eclipse.smarthome.core.thing.ChannelUID;
 import org.eclipse.smarthome.core.thing.Thing;
@@ -143,20 +144,6 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
             ContentResponse response;
             int statusCode = 0;
 
-            if (token != null) {
-                response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes").method(HttpMethod.GET)
-                        .header("Accept", "application/vnd.alertme.zoo-6.1+json")
-                        .header("Content-Type", "application/vnd.alertme.zoo-6.1+json")
-                        .header("X-Omnia-Client", "Openhab 2").header("X-Omnia-Access-Token", token)
-                        .timeout(DISCOVER_TIMEOUT_SECONDS, TimeUnit.SECONDS).send();
-                statusCode = response.getStatus();
-
-                if (statusCode == HttpStatus.OK_200) {
-                    // Token is still working, no need to get another
-                    return true;
-                }
-            }
-
             JsonObject sessionObject = new JsonObject();
             JsonObject jsonObject = new JsonObject();
             jsonObject.addProperty("caller", "WEB");
@@ -251,7 +238,12 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
                     }
                 }
             } catch (Exception e) {
-                logger.error("Failed to add node to discovery results: {}", e);
+                if (e.getMessage().contains("WWW-Authenticate header")) {
+                    logger.info("Requesting new token");
+                    getToken();
+                } else {
+                    logger.error("Failed request: {}", e);
+                }
                 return;
             }
         }
@@ -322,36 +314,56 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
         return null;
     }
 
+    private void callClient(String setObject, ThingUID uid, String type) {
+        try {
+            ContentResponse response;
+            response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes/" + uid.getId())
+                    .method(HttpMethod.PUT).header("Accept", "application/vnd.alertme.zoo-6.1+json")
+                    .header("Content-Type", "application/vnd.alertme.zoo-6.1+json")
+                    .header("X-Omnia-Client", "Openhab 2").header("X-Omnia-Access-Token", token)
+                    .timeout(DISCOVER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .content(new StringContentProvider(setObject)).send();
+
+            int statusCode = response.getStatus();
+
+            if (statusCode == HttpStatus.UNAUTHORIZED_401) {
+                // Token expired, get a new one and try again
+                getToken();
+                statusCode = response.getStatus();
+            }
+
+            if (statusCode != HttpStatus.OK_200) {
+                // If it failed, log the error
+                String statusLine = response.getStatus() + " " + response.getReason();
+                logger.error("Method failed: {}", statusLine);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to update {}: {}", type, e);
+        }
+    }
+
+    public void boost(ThingUID uid, OnOffType boost, int duration) {
+        if (online) {
+            if (boost == OnOffType.ON) {
+                String setObject = "{\"nodes\": [{\"attributes\": {\"activeHeatCoolMode\": {\"targetValue\": \"BOOST\"}," +
+                        "\"scheduleLockDuration\": {\"targetValue\": " + duration + "}}}]}";
+                callClient(setObject, uid,"boost");
+            } else if (boost == OnOffType.OFF) {
+                String setObject = "{\"nodes\": [{\"attributes\": {\"activeHeatCoolMode\": {\"targetValue\": \"HEAT\"}, " +
+                        "\"activeScheduleLock\": {\"targetValue\": \"True\"}}}]}";
+                callClient(setObject, uid,"boost");
+            }
+            else {
+                logger.error("Unknown state of BOOST");
+            }
+        }
+    }
+
     public void setTargetTemperature(ThingUID uid, float f) {
         if (online) {
-            ContentResponse response;
-            try {
-                String setObject = "{\"nodes\": [{\"attributes\": {\"targetHeatTemperature\": {\"targetValue\": " + f
-                        + "}}}]}";
-
-                response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes/" + uid.getId())
-                        .method(HttpMethod.PUT).header("Accept", "application/vnd.alertme.zoo-6.1+json")
-                        .header("Content-Type", "application/vnd.alertme.zoo-6.1+json")
-                        .header("X-Omnia-Client", "Openhab 2").header("X-Omnia-Access-Token", token)
-                        .timeout(DISCOVER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                        .content(new StringContentProvider(setObject)).send();
-
-                int statusCode = response.getStatus();
-
-                if (statusCode == HttpStatus.UNAUTHORIZED_401) {
-                    // Token expired, get a new one and try again
-                    getToken();
-                    statusCode = response.getStatus();
-                }
-
-                if (statusCode != HttpStatus.OK_200) {
-                    // If it failed, log the error
-                    String statusLine = response.getStatus() + " " + response.getReason();
-                    logger.error("Method failed: {}", statusLine);
-                }
-            } catch (Exception e) {
-                logger.error("Failed to update target temperature: {}", e);
-            }
+            String setObject = "{\"nodes\": [{\"attributes\": {\"targetHeatTemperature\": {\"targetValue\": " + f
+                    + "}}}]}";
+            callClient(setObject, uid,"target temperature");
         }
     }
 }

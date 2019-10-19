@@ -12,6 +12,8 @@
 		<channels>
 			<channel id="currenttemperature" typeId="currenttemperature" />
 			<channel id="targettemperature" typeId="targettemperature" />
+			<channel id="boost" typeId="boost" />
+			<channel id="boostduration" typeId="boostduration" />
 			<channel id="heatingon" typeId="heatingon" />
 			<channel id="hotwateron" typeId="hotwateron" />
 			<channel id="mode" typeId="mode" />
@@ -37,6 +39,12 @@
 		<category>Temperature</category>
 		<state pattern="%.1f %unit%" />
 	</channel-type>
+	<channel-type id="boost">
+		<item-type>Switch</item-type>
+		<label>Boost</label>
+		<description>Turn boost on</description>
+		<category>Valve</category>
+	</channel-type>
 	<channel-type id="heatingon">
 		<item-type>Switch</item-type>
 		<label>Heating On</label>
@@ -59,11 +67,10 @@
 		<state readOnly="true" />
 	</channel-type>
 	<channel-type id="boostremaining">
-		<item-type>String</item-type>
+		<item-type>Number</item-type>
 		<label>Remaining Boost Time</label>
 		<description>The time remaining until this boost ends</description>
 		<category>Valve</category>
-		<state readOnly="true" />
 	</channel-type>
 	<channel-type id="battery-level">
         <item-type>Number</item-type>

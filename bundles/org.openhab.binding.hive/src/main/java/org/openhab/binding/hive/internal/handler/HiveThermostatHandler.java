@@ -1,6 +1,6 @@
 /**
  * Copyright (c) 2010-2019 by the respective copyright holders.
- *
+ * <p>
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -38,6 +38,7 @@ public class HiveThermostatHandler extends BaseThingHandler {
     private Logger logger = LoggerFactory.getLogger(HiveThermostatHandler.class);
     protected int failureCount = 0;
     protected HiveBridgeHandler bridgeHandler;
+    protected OnOffType boostCache = OnOffType.OFF;
 
     public HiveThermostatHandler(Thing thing) {
         super(thing);
@@ -70,6 +71,17 @@ public class HiveThermostatHandler extends BaseThingHandler {
             updateState(heatingOnChannel.getUID().getId(), OnOffType.valueOf(reading.stateHeatingRelay.reportedValue));
         }
 
+        Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
+        if (boostOnChannel != null) {
+            if (reading.activeHeatCoolMode.reportedValue.equals("BOOST")) {
+                boostCache = OnOffType.ON;
+                updateState(boostOnChannel.getUID().getId(), OnOffType.ON);
+            } else {
+                boostCache = OnOffType.OFF;
+                updateState(boostOnChannel.getUID().getId(), OnOffType.OFF);
+            }
+        }
+
         Channel hotWaterOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HOTWATER_ON);
         if (hotWaterOnChannel != null) {
             if (reading.stateHotWaterRelay != null) {
@@ -83,6 +95,7 @@ public class HiveThermostatHandler extends BaseThingHandler {
             updateState(thermostatBatteryChannel.getUID().getId(),
                     DecimalType.valueOf(reading.batteryLevel.displayValue));
         }
+
 
         // Work out which mode we are in
         Boolean scheduleLock = Boolean.parseBoolean(reading.activeScheduleLock.displayValue);
@@ -107,15 +120,12 @@ public class HiveThermostatHandler extends BaseThingHandler {
             if (reading.activeOverrides != null && boost) {
                 int expiryMinutes = new Integer(reading.scheduleLockDuration.displayValue);
                 if (expiryMinutes > 0) {
-                    int hours = expiryMinutes / 60;
-                    int minutes = expiryMinutes % 60;
-                    updateState(boostRemainingChannel.getUID().getId(),
-                            new StringType(String.format("%d:%02d", hours, minutes)));
+                    updateState(boostRemainingChannel.getUID().getId(), new DecimalType(expiryMinutes));
                 } else {
-                    updateState(boostRemainingChannel.getUID().getId(), new StringType("N/A"));
+                    updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
                 }
             } else {
-                updateState(boostRemainingChannel.getUID().getId(), new StringType("Not Boosting"));
+                updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
             }
         }
     }
@@ -159,8 +169,42 @@ public class HiveThermostatHandler extends BaseThingHandler {
                 }
                 break;
             }
+            case HiveBindingConstants.CHANNEL_BOOST_REMAINING: {
+                if (command instanceof DecimalType) {
+                    if (boostCache == OnOffType.ON) {
+                        DecimalType duration = (DecimalType) command;
+                        getHiveBridgeHandler().boost(getThing().getUID(), OnOffType.ON, duration.intValue());
+                    }
+                } else {
+                    logger.error("CHANNEL_BOOST_REMAINING only supports numbers.");
+                }
+                break;
+            }
+            case HiveBindingConstants.CHANNEL_BOOST: {
+                if (command instanceof OnOffType) {
+                    OnOffType boost = (OnOffType) command;
+                    getHiveBridgeHandler().boost(getThing().getUID(), boost, 30);
+                    boostCache = boost;
+                    Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
+                    if (boostOnChannel != null) {
+                        updateState(boostOnChannel.getUID().getId(), boost);
+                    }
+                    Channel boostRemainingChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST_REMAINING);
+                    if (boostRemainingChannel != null) {
+                        if (boost == OnOffType.ON) {
+                            updateState(boostRemainingChannel.getUID().getId(), new DecimalType(30));
+                        } else {
+                            updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
+                        }
+                    }
+                } else {
+                    logger.error("CHANNEL_BOOST only supports switch type.");
+                }
+                break;
+            }
             default:
                 logger.error("Channel unknown {}", channelUID.getId());
         }
+
     }
 }

@@ -45,6 +45,7 @@ public class HiveBindingConstants {
     // List of all channel ids
     public static final String CHANNEL_CURRENT_TEMPERATURE = "currenttemperature";
     public static final String CHANNEL_TARGET_TEMPERATURE = "targettemperature";
+    public static final String CHANNEL_BOOST = "boost";
     public static final String CHANNEL_HEATING_ON = "heatingon";
     public static final String CHANNEL_HOTWATER_ON = "hotwateron";
     public static final String CHANNEL_MODE = "mode";
