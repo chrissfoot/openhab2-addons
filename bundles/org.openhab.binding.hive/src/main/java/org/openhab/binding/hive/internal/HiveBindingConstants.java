@@ -37,7 +37,7 @@ public class HiveBindingConstants {
 
     public static final Set<ThingTypeUID> BRIDGE_THING_TYPES_UIDS = Collections.singleton(BRIDGE_THING_TYPE);
     public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections
-            .unmodifiableSet(Stream.of(THERMOSTAT_THING_TYPE, TRV_THING_TYPE).collect(Collectors.toSet()));
+            .unmodifiableSet(Stream.of(THERMOSTAT_THING_TYPE).collect(Collectors.toSet()));
 
     // List of all Config Items
     public static final String CONFIG_USER_NAME = "USRNM";
@@ -47,16 +47,20 @@ public class HiveBindingConstants {
     // List of all node types
     public static final String RECEIVER_NODE_TYPE = "http://alertme.com/schema/json/node.class.thermostat.json#";
     public static final String THERMOSTAT_NODE_TYPE = "http://alertme.com/schema/json/node.class.thermostat.json#";
+    public static final String THERMOSTATUI_NODE_TYPE = "http://alertme.com/schema/json/node.class.thermostatui.json#";
     public static final String TRV_NODE_TYPE = "http://alertme.com/schema/json/node.class.trv.json#";
 
     // List of all channel ids
     public static final String CHANNEL_CURRENT_TEMPERATURE = "currenttemperature";
     public static final String CHANNEL_TARGET_TEMPERATURE = "targettemperature";
-    public static final String CHANNEL_BOOST = "boost";
+    public static final String CHANNEL_HEATING_BOOST = "boost";
+    public static final String CHANNEL_HOTWATER_BOOST = "boost";
     public static final String CHANNEL_HEATING_ON = "heatingon";
     public static final String CHANNEL_HOTWATER_ON = "hotwateron";
-    public static final String CHANNEL_MODE = "mode";
-    public static final String CHANNEL_BOOST_REMAINING = "boostremaining";
+    public static final String CHANNEL_HEATING_STATUS = "heatingstatus";
+    public static final String CHANNEL_HOTWATER_STATUS = "hotwaterstatus";
+    public static final String CHANNEL_HEATING_BOOST_REMAINING = "boostheatingremaining";
+    public static final String CHANNEL_HOTWATER_BOOST_REMAINING = "boosthotwaterremaining";
     public static final String CHANNEL_THERMOSTAT_BATTERY = "thermostatbattery";
 
 }

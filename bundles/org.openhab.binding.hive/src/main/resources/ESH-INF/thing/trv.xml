@@ -7,19 +7,18 @@
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="bridge" />
 		</supported-bridge-type-refs>
-		<label>Hive Home Thermostatic Radiator Valve</label>
+		<label>Hive Home TRV</label>
 		<description>Hive Home Thermostatic Radiator Valve</description>		 
 		<channels>
 			<channel id="currenttemperature" typeId="currenttemperature" />
 			<channel id="targettemperature" typeId="targettemperature" />
-			<channel id="boost" typeId="boost" />			
+			<channel id="boost" typeId="boost" />
+			<channel id="heatingon" typeId="heatingon" />
+			<channel id="hotwateron" typeId="hotwateron" />
 			<channel id="mode" typeId="mode" />
 			<channel id="boostremaining" typeId="boostremaining" />
-			<channel id="thermostatbattery" typeId="battery-level" />			
-		</channels>
-        <properties>
-            <property name="linkedDevice"></property>
-        </properties>
+			<channel id="thermostatbattery" typeId="battery-level" />
+		</channels>      
         <representation-property>nodeId</representation-property>
 	</thing-type>
 	<channel-type id="currenttemperature">
@@ -41,11 +40,25 @@
         <label>Boost</label>
         <description>Turn boost on</description>
         <category>Valve</category>
-    </channel-type>	
+    </channel-type>
+	<channel-type id="heatingon">
+		<item-type>Switch</item-type>
+		<label>Heating On</label>
+		<description>The current heating status</description>
+		<category>Valve</category>
+		<state readOnly="true" />
+	</channel-type>
+	<channel-type id="hotwateron">
+		<item-type>Switch</item-type>
+		<label>Hot Water On</label>
+		<description>The current hot water status</description>
+		<category>Valve</category>
+		<state readOnly="true" />
+	</channel-type>
 	<channel-type id="mode">
 		<item-type>String</item-type>
 		<label>Heating Mode</label>
-		<description>The current heating mode</description>
+		<description>The current heating/hot water mode</description>
 		<category>Valve</category>
 		<state readOnly="true" />
 	</channel-type>
@@ -58,7 +71,7 @@
 	<channel-type id="battery-level">
         <item-type>Number</item-type>
         <label>Battery Level</label>
-        <description>Battery level</description>
+        <description>The thermostat battery level</description>
         <category>Battery</category>
         <state readOnly="true" />
     </channel-type>

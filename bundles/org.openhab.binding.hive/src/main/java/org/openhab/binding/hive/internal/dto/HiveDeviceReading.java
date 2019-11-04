@@ -12,16 +12,22 @@
  */
 package org.openhab.binding.hive.internal.dto;
 
-import java.util.Map;
+import org.eclipse.smarthome.core.library.types.DecimalType;
 
 /**
  *
  * @author Chris Foot - Initial contribution
  */
 
-public class HiveNode {
-    public String id;
-    public String name;
-    public String nodeType;
-    public Map<String, Map<String, HiveFeature>> features;
+public class HiveDeviceReading {
+    public String deviceId;
+    public String status;
+    public DecimalType current;
+    public DecimalType target;
+    public String mode;
+    public Boolean override;
+    public Boolean overrideReadOnly;
+    public long overrideRemaining;
+    public int batteryLevel;
+    public Boolean heating;
 }

@@ -30,7 +30,8 @@ import org.eclipse.smarthome.core.thing.Thing;
 import org.eclipse.smarthome.core.thing.ThingUID;
 import org.eclipse.smarthome.core.thing.binding.ThingHandler;
 import org.eclipse.smarthome.core.thing.binding.ThingHandlerService;
-import org.openhab.binding.hive.internal.dto.HiveNode;
+import org.openhab.binding.hive.internal.dto.HiveTRV;
+import org.openhab.binding.hive.internal.dto.HiveThermostat;
 import org.openhab.binding.hive.internal.handler.HiveBridgeHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,23 +51,37 @@ public class HiveDiscoveryService extends AbstractDiscoveryService implements Di
         super(SUPPORTED_THING_TYPES_UIDS, 30);
     }
 
-    public void addDevice(HiveNode node) {
-        if (node.attributes.nodeType.reportedValue.equals(THERMOSTAT_NODE_TYPE)) {
-            ThingUID bridgeUID = hiveBridgeHandler.getThing().getUID();
-            ThingUID thingUID = new ThingUID(THERMOSTAT_THING_TYPE, node.id);
+    public void addThermostat(HiveThermostat thermostat) {
 
-            Map<String, Object> properties = new HashMap<>(1);
-            properties.put("linkedDevice", node.linkedNode);
-            properties.put(Thing.PROPERTY_VENDOR, "Hive Limited");
-            properties.put(Thing.PROPERTY_FIRMWARE_VERSION, node.firmwareVersion);
-            properties.put(Thing.PROPERTY_MAC_ADDRESS, node.macAddress);
-            properties.put(Thing.PROPERTY_MODEL_ID, node.model);
+        ThingUID bridgeUID = hiveBridgeHandler.getThing().getUID();
+        ThingUID thingUID = new ThingUID(THERMOSTAT_THING_TYPE, thermostat.uiId);
 
-            DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID)
-                    .withThingType(THERMOSTAT_THING_TYPE).withBridge(bridgeUID).withLabel("Thermostat")
-                    .withProperties(properties).withRepresentationProperty(node.id).build();
-            thingDiscovered(discoveryResult);
-        }
+        Map<String, Object> properties = new HashMap<>(1);
+        properties.put("heatingId", thermostat.heatingId);
+        properties.put(Thing.PROPERTY_VENDOR, "Hive Limited");
+        properties.put(Thing.PROPERTY_MODEL_ID, "Hive Active Heating");
+
+        DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID).withThingType(THERMOSTAT_THING_TYPE)
+                .withBridge(bridgeUID).withLabel("Thermostat").withProperties(properties)
+                .withRepresentationProperty(thermostat.uiId).build();
+        thingDiscovered(discoveryResult);
+
+    }
+
+    public void addTRV(HiveTRV trv) {
+
+        ThingUID bridgeUID = hiveBridgeHandler.getThing().getUID();
+        ThingUID thingUID = new ThingUID(TRV_THING_TYPE, trv.id);
+
+        Map<String, Object> properties = new HashMap<>(1);
+        properties.put(Thing.PROPERTY_VENDOR, "Hive Limited");
+        properties.put(Thing.PROPERTY_MODEL_ID, "Hive TRV");
+
+        DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID).withThingType(TRV_THING_TYPE)
+                .withBridge(bridgeUID).withLabel(trv.name).withProperties(properties).withRepresentationProperty(trv.id)
+                .build();
+        thingDiscovered(discoveryResult);
+
     }
 
     @Override

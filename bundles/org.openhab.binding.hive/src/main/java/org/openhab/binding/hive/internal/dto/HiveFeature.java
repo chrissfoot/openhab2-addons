@@ -12,16 +12,16 @@
  */
 package org.openhab.binding.hive.internal.dto;
 
-import java.util.Map;
-
 /**
  *
  * @author Chris Foot - Initial contribution
  */
 
-public class HiveNode {
-    public String id;
-    public String name;
-    public String nodeType;
-    public Map<String, Map<String, HiveFeature>> features;
+public class HiveFeature {
+    public Object reportedValue;
+    public Object displayValue;
+    public String targetValue;
+    public long reportReceivedTime;
+    public long reportChangedTime;
+    public long targetSetTime;
 }

@@ -12,16 +12,13 @@
  */
 package org.openhab.binding.hive.internal.dto;
 
-import java.util.Map;
-
 /**
  *
  * @author Chris Foot - Initial contribution
  */
 
-public class HiveNode {
-    public String id;
-    public String name;
-    public String nodeType;
-    public Map<String, Map<String, HiveFeature>> features;
+public class HiveThermostat {
+    public String heatingId;
+    public String hotwaterId;
+    public String uiId;
 }

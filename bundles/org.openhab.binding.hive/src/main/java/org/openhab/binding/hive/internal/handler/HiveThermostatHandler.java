@@ -16,7 +16,6 @@ import javax.measure.quantity.Temperature;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.eclipse.smarthome.core.library.types.DecimalType;
 import org.eclipse.smarthome.core.library.types.OnOffType;
 import org.eclipse.smarthome.core.library.types.QuantityType;
 import org.eclipse.smarthome.core.library.types.StringType;
@@ -31,7 +30,8 @@ import org.eclipse.smarthome.core.thing.binding.ThingHandler;
 import org.eclipse.smarthome.core.types.Command;
 import org.eclipse.smarthome.core.types.RefreshType;
 import org.openhab.binding.hive.internal.HiveBindingConstants;
-import org.openhab.binding.hive.internal.dto.HiveAttributes;
+import org.openhab.binding.hive.internal.dto.HiveCurrentStatus;
+import org.openhab.binding.hive.internal.dto.HiveDeviceReading;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,96 +59,115 @@ public class HiveThermostatHandler extends BaseThingHandler {
     }
 
     protected void updateChannel() {
-        HiveAttributes reading = getThermostatReading();
+        HiveCurrentStatus reading = getReading();
 
         if (!reading.isValid) {
             failureCount++;
             if (failureCount > 2) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                        "Unable to get the status of your thermostat, this may be a temporary problem with the HIVE api");
+                        "Unable to get the status of your hive devices, this may be a temporary problem with the HIVE api");
             }
             return;
         }
 
         updateStatus(ThingStatus.ONLINE);
-        Channel temperatureChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_CURRENT_TEMPERATURE);
-        if (temperatureChannel != null) {
-            updateState(temperatureChannel.getUID().getId(), new DecimalType(reading.temperature.reportedValue));
-        }
 
-        Channel targetChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_TARGET_TEMPERATURE);
-        if (targetChannel != null) {
-            updateState(targetChannel.getUID().getId(), new DecimalType(reading.targetHeatTemperature.reportedValue));
-        }
+        String heatingId = getThing().getProperties().get("heatingId");
 
-        Channel heatingOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HEATING_ON);
-        if (heatingOnChannel != null) {
-            updateState(heatingOnChannel.getUID().getId(), OnOffType.valueOf(reading.stateHeatingRelay.reportedValue));
-        }
+        HiveDeviceReading heatingReading = reading.readings.stream().filter(x -> x.deviceId.equals(heatingId)).findAny()
+                .orElse(null);
 
-        Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
-        if (boostOnChannel != null) {
-            if (reading.activeHeatCoolMode.reportedValue.equals("BOOST")) {
-                boostCache = OnOffType.ON;
-                updateState(boostOnChannel.getUID().getId(), OnOffType.ON);
-            } else {
-                boostCache = OnOffType.OFF;
-                updateState(boostOnChannel.getUID().getId(), OnOffType.OFF);
+        if (heatingReading != null) {
+
+            Channel temperatureChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_CURRENT_TEMPERATURE);
+            if (temperatureChannel != null) {
+                updateState(temperatureChannel.getUID().getId(), heatingReading.current);
             }
-        }
 
-        Channel hotWaterOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HOTWATER_ON);
-        if (hotWaterOnChannel != null) {
-            if (reading.stateHotWaterRelay != null) {
-                updateState(hotWaterOnChannel.getUID().getId(),
-                        OnOffType.valueOf(reading.stateHotWaterRelay.reportedValue));
+            Channel targetChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_TARGET_TEMPERATURE);
+            if (targetChannel != null) {
+                updateState(targetChannel.getUID().getId(), heatingReading.target);
             }
-        }
 
-        Channel thermostatBatteryChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_THERMOSTAT_BATTERY);
-        if (thermostatBatteryChannel != null) {
-            updateState(thermostatBatteryChannel.getUID().getId(),
-                    DecimalType.valueOf(reading.batteryLevel.displayValue));
-        }
-
-        // Work out which mode we are in
-        Boolean scheduleLock = Boolean.parseBoolean(reading.activeScheduleLock.displayValue);
-        Boolean heatCoolMode = reading.activeHeatCoolMode.displayValue.equals("HEAT");
-        Boolean boost = reading.activeHeatCoolMode.displayValue.equals("BOOST");
-
-        Channel modeChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_MODE);
-        if (modeChannel != null) {
-            if (boost) {
-                updateState(modeChannel.getUID().getId(), new StringType("Boost"));
-            } else if (scheduleLock && heatCoolMode) {
-                updateState(modeChannel.getUID().getId(), new StringType("Manual"));
-            } else if (!scheduleLock && heatCoolMode) {
-                updateState(modeChannel.getUID().getId(), new StringType("Schedule"));
-            } else if (scheduleLock && !heatCoolMode) {
-                updateState(modeChannel.getUID().getId(), new StringType("Off"));
+            Channel heatingOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HEATING_ON);
+            if (heatingOnChannel != null) {
+                updateState(heatingOnChannel.getUID().getId(), OnOffType.from(heatingReading.heating));
             }
-        }
 
-        Channel boostRemainingChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST_REMAINING);
-        if (boostRemainingChannel != null) {
-            if (reading.activeOverrides != null && boost) {
-                int expiryMinutes = new Integer(reading.scheduleLockDuration.displayValue);
-                if (expiryMinutes > 0) {
-                    updateState(boostRemainingChannel.getUID().getId(), new DecimalType(expiryMinutes));
-                } else {
-                    updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
-                }
-            } else {
-                updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
+            Channel heatingStatusChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HEATING_STATUS);
+            if (heatingStatusChannel != null) {
+                updateState(heatingStatusChannel.getUID().getId(), StringType.valueOf(heatingReading.status));
             }
+
+            Channel boostChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HEATING_BOOST);
+            if (boostChannel != null) {
+                updateState(boostChannel.getUID().getId(), OnOffType.from(heatingReading.override));
+            }
+
         }
+        // Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
+        // if (boostOnChannel != null) {
+        // if (reading.activeHeatCoolMode.reportedValue.equals("BOOST")) {
+        // boostCache = OnOffType.ON;
+        // updateState(boostOnChannel.getUID().getId(), OnOffType.ON);
+        // } else {
+        // boostCache = OnOffType.OFF;
+        // updateState(boostOnChannel.getUID().getId(), OnOffType.OFF);
+        // }
+        // }
+        //
+        // Channel hotWaterOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_HOTWATER_ON);
+        // if (hotWaterOnChannel != null) {
+        // if (reading.stateHotWaterRelay != null) {
+        // updateState(hotWaterOnChannel.getUID().getId(),
+        // OnOffType.valueOf(reading.stateHotWaterRelay.reportedValue));
+        // }
+        // }
+        //
+        // Channel thermostatBatteryChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_THERMOSTAT_BATTERY);
+        // if (thermostatBatteryChannel != null) {
+        // updateState(thermostatBatteryChannel.getUID().getId(),
+        // DecimalType.valueOf(reading.batteryLevel.displayValue));
+        // }
+        //
+        // // Work out which mode we are in
+        // Boolean scheduleLock = Boolean.parseBoolean(reading.activeScheduleLock.displayValue);
+        // Boolean heatCoolMode = reading.activeHeatCoolMode.displayValue.equals("HEAT");
+        // Boolean boost = reading.activeHeatCoolMode.displayValue.equals("BOOST");
+        //
+        // Channel modeChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_MODE);
+        // if (modeChannel != null) {
+        // if (boost) {
+        // updateState(modeChannel.getUID().getId(), new StringType("Boost"));
+        // } else if (scheduleLock && heatCoolMode) {
+        // updateState(modeChannel.getUID().getId(), new StringType("Manual"));
+        // } else if (!scheduleLock && heatCoolMode) {
+        // updateState(modeChannel.getUID().getId(), new StringType("Schedule"));
+        // } else if (scheduleLock && !heatCoolMode) {
+        // updateState(modeChannel.getUID().getId(), new StringType("Off"));
+        // }
+        // }
+        //
+        // Channel boostRemainingChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST_REMAINING);
+        // if (boostRemainingChannel != null) {
+        // if (reading.activeOverrides != null && boost) {
+        // int expiryMinutes = new Integer(reading.scheduleLockDuration.displayValue);
+        // if (expiryMinutes > 0) {
+        // updateState(boostRemainingChannel.getUID().getId(), new DecimalType(expiryMinutes));
+        // } else {
+        // updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
+        // }
+        // } else {
+        // updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
+        // }
+        // }
     }
 
-    public HiveAttributes getThermostatReading() {
+    public HiveCurrentStatus getReading() {
         if (bridgeHandler != null) {
-            return bridgeHandler.getThermostatReading(this.thing);
+            return bridgeHandler.getReading();
         } else {
-            return new HiveAttributes();
+            return new HiveCurrentStatus();
         }
     }
 
@@ -191,43 +210,43 @@ public class HiveThermostatHandler extends BaseThingHandler {
                 }
                 break;
             }
-            case HiveBindingConstants.CHANNEL_BOOST_REMAINING: {
-                if (command instanceof DecimalType) {
-                    if (boostCache == OnOffType.ON) {
-                        DecimalType duration = (DecimalType) command;
-                        if (bridgeHandler != null) {
-                            bridgeHandler.boost(getThing().getUID(), OnOffType.ON, duration.intValue());
-                        }
-                    }
-                } else {
-                    logger.warn("CHANNEL_BOOST_REMAINING only supports numbers.");
-                }
-                break;
-            }
-            case HiveBindingConstants.CHANNEL_BOOST: {
-                if (command instanceof OnOffType) {
-                    OnOffType boost = (OnOffType) command;
-                    if (bridgeHandler != null) {
-                        bridgeHandler.boost(getThing().getUID(), boost, 30);
-                    }
-                    boostCache = boost;
-                    Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
-                    if (boostOnChannel != null) {
-                        updateState(boostOnChannel.getUID().getId(), boost);
-                    }
-                    Channel boostRemainingChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST_REMAINING);
-                    if (boostRemainingChannel != null) {
-                        if (boost == OnOffType.ON) {
-                            updateState(boostRemainingChannel.getUID().getId(), new DecimalType(30));
-                        } else {
-                            updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
-                        }
-                    }
-                } else {
-                    logger.warn("CHANNEL_BOOST only supports switch type.");
-                }
-                break;
-            }
+            // case HiveBindingConstants.CHANNEL_BOOST_REMAINING: {
+            // if (command instanceof DecimalType) {
+            // if (boostCache == OnOffType.ON) {
+            // DecimalType duration = (DecimalType) command;
+            // if (bridgeHandler != null) {
+            // bridgeHandler.boost(getThing().getUID(), OnOffType.ON, duration.intValue());
+            // }
+            // }
+            // } else {
+            // logger.warn("CHANNEL_BOOST_REMAINING only supports numbers.");
+            // }
+            // break;
+            // }
+            // case HiveBindingConstants.CHANNEL_BOOST: {
+            // if (command instanceof OnOffType) {
+            // OnOffType boost = (OnOffType) command;
+            // if (bridgeHandler != null) {
+            // bridgeHandler.boost(getThing().getUID(), boost, 30);
+            // }
+            // boostCache = boost;
+            // Channel boostOnChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST);
+            // if (boostOnChannel != null) {
+            // updateState(boostOnChannel.getUID().getId(), boost);
+            // }
+            // Channel boostRemainingChannel = getThing().getChannel(HiveBindingConstants.CHANNEL_BOOST_REMAINING);
+            // if (boostRemainingChannel != null) {
+            // if (boost == OnOffType.ON) {
+            // updateState(boostRemainingChannel.getUID().getId(), new DecimalType(30));
+            // } else {
+            // updateState(boostRemainingChannel.getUID().getId(), new DecimalType(0));
+            // }
+            // }
+            // } else {
+            // logger.warn("CHANNEL_BOOST only supports switch type.");
+            // }
+            // break;
+            // }
             default:
                 logger.warn("Channel unknown {}", channelUID.getId());
         }

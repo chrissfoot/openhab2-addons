@@ -14,8 +14,13 @@ package org.openhab.binding.hive.internal.handler;
 
 import static org.openhab.binding.hive.internal.HiveBindingConstants.*;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -31,6 +36,7 @@ import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpStatus;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.smarthome.config.core.Configuration;
+import org.eclipse.smarthome.core.library.types.DecimalType;
 import org.eclipse.smarthome.core.library.types.OnOffType;
 import org.eclipse.smarthome.core.thing.Bridge;
 import org.eclipse.smarthome.core.thing.ChannelUID;
@@ -43,10 +49,13 @@ import org.eclipse.smarthome.core.thing.binding.ThingHandler;
 import org.eclipse.smarthome.core.thing.binding.ThingHandlerService;
 import org.eclipse.smarthome.core.types.Command;
 import org.openhab.binding.hive.internal.discovery.HiveDiscoveryService;
-import org.openhab.binding.hive.internal.dto.HiveAttributes;
+import org.openhab.binding.hive.internal.dto.HiveCurrentStatus;
+import org.openhab.binding.hive.internal.dto.HiveDeviceReading;
 import org.openhab.binding.hive.internal.dto.HiveLoginResponse;
 import org.openhab.binding.hive.internal.dto.HiveNode;
 import org.openhab.binding.hive.internal.dto.HiveNodes;
+import org.openhab.binding.hive.internal.dto.HiveTRV;
+import org.openhab.binding.hive.internal.dto.HiveThermostat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +81,10 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
     private static HttpClient client = new HttpClient(new SslContextFactory(true));
     private Boolean online = false;
     protected Gson gson = new Gson();
+    protected HiveCurrentStatus lastStatus = new HiveCurrentStatus();
+    protected Date lastStatusFetched = new Date(0);
+    protected Boolean gettingStatus = false;
+
     @Nullable public HiveDiscoveryService hiveDiscoveryService;
     @Nullable protected ScheduledFuture<?> refreshJob;
 
@@ -234,49 +247,102 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
 
             if (o.nodes.size() > 0) {
                 // Loop through the nodes and add thermostats
-                // There are 3 types, heating, hot water and UI
-                HiveNode thermostat = null;
-                HiveNode systemInfo = null;
+                // There are many types including: heating, hot water, UI and TRV
+                ArrayList<HiveNode> heatingNodes = new ArrayList<HiveNode>();
+                ArrayList<HiveNode> hotwaterNodes = new ArrayList<HiveNode>();
+                ArrayList<HiveNode> thermostatUINodes = new ArrayList<HiveNode>();
+
+                // TODO: Find out what happens if the user has more than one thermostat! Specifically, how are they
+                // linked
+
+                HiveThermostat thermostat = new HiveThermostat();
                 for (HiveNode node : o.nodes) {
-                    if (node.attributes != null && node.attributes.nodeType != null
-                            && node.attributes.nodeType.reportedValue.equals(THERMOSTAT_NODE_TYPE)
-                            && node.attributes.temperature != null) {
-                        // Check that this is the heating node
-                        thermostat = node;
-                    }
-                    if (node.attributes != null && node.attributes.batteryLevel != null) {
+                    if (node.nodeType.equals(THERMOSTAT_NODE_TYPE)
+                            && node.features.get("device_management_v1").get("productType").reportedValue
+                                    .equals("HEATING")) {
+                        // This is a heating node
+                        heatingNodes.add(node);
+                    } else if (node.nodeType.equals(THERMOSTAT_NODE_TYPE)
+                            && node.features.get("device_management_v1").get("productType").reportedValue
+                                    .equals("HOT_WATER")) {
+                        // Check that this is the hot water node
+                        hotwaterNodes.add(node);
+                    } else if (node.nodeType.equals(THERMOSTATUI_NODE_TYPE)) {
                         // This is the thermostat UI node
-                        systemInfo = node;
+                        thermostatUINodes.add(node);
+                    } else if (node.nodeType.equals(TRV_NODE_TYPE)) {
+                        HiveTRV trv = new HiveTRV();
+                        trv.id = node.id;
+                        trv.name = node.name;
+                        if (hiveDiscoveryService != null) {
+                            hiveDiscoveryService.addTRV(trv);
+                        }
                     }
                 }
-                if (thermostat != null) {
-                    if (systemInfo != null) {
-                        thermostat.linkedNode = systemInfo.id;
-                        thermostat.firmwareVersion = systemInfo.attributes.softwareVersion.displayValue;
-                        thermostat.model = systemInfo.attributes.model.displayValue;
-                        thermostat.macAddress = systemInfo.attributes.macAddress.displayValue;
+                if (thermostatUINodes.size() > 0) {
+                    thermostat.uiId = thermostatUINodes.get(0).id;
+
+                    if (heatingNodes.size() > 0) {
+                        thermostat.heatingId = heatingNodes.get(0).id;
                     }
+                    if (hotwaterNodes.size() > 0) {
+                        thermostat.hotwaterId = hotwaterNodes.get(0).id;
+                    }
+
                     if (hiveDiscoveryService != null) {
-                        hiveDiscoveryService.addDevice(thermostat);
+                        hiveDiscoveryService.addThermostat(thermostat);
                     }
                 }
             }
         }
     }
 
-    public HiveAttributes getThermostatReading(Thing thing) {
-        HiveAttributes reading = new HiveAttributes();
+    public HiveCurrentStatus getReading() {
+        return getReading(false);
+    }
+
+    public HiveCurrentStatus getReading(Boolean ignoreCached) {
+        HiveNodes o = null;
+        HiveCurrentStatus status = new HiveCurrentStatus();
+        status.readings = new ArrayList<HiveDeviceReading>();
+
+        // Check if we are already going to the API, if so, wait for the result of the previous call
+        if (gettingStatus) {
+            int timeout = 0;
+            while (gettingStatus && timeout < 100) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    logger.warn("Get Reading Thread Interrupted");
+                    return status;
+                }
+                timeout++;
+            }
+            if (timeout >= 100) {
+                return status;
+            }
+            return lastStatus;
+        }
+
+        // Check for cached api call so that we don't overwhelm the api
+        // This method could easily be called 10 times in a second if the user have 10 trvs for instance
+        // So we cache the last fetched status to avoid all those extra api calls
+        // Date FiveMinutesAgo = new Date(new Date().getTime() - 300000);
+        // if (lastStatusFetched.after(FiveMinutesAgo) && !ignoreCached) {
+        // return lastStatus;
+        // }
+
+        gettingStatus = true;
 
         if (online) {
             ContentResponse response;
             int statusCode = 0;
             String responseString = "";
-            HiveNodes o = null;
 
-            // Get thermostat reading
+            // Get all nodes
             try {
-                response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes/" + thing.getUID().getId())
-                        .method(HttpMethod.GET).header("Accept", "application/vnd.alertme.zoo-6.5+json")
+                response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes").method(HttpMethod.GET)
+                        .header("Accept", "application/vnd.alertme.zoo-6.5+json")
                         .header("Content-Type", "application/vnd.alertme.zoo-6.5+json")
                         .header("X-Omnia-Client", "Openhab 2").header("X-Omnia-Access-Token", token)
                         .timeout(DISCOVER_TIMEOUT_SECONDS, TimeUnit.SECONDS).send();
@@ -293,47 +359,85 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
                     // If it failed, log the error
                     String statusLine = response.getStatus() + " " + response.getReason();
                     logger.warn("Error while reading from Hive API: {}", statusLine);
-                    return reading;
+                    status.isValid = false;
+                    return status;
                 }
 
                 responseString = response.getContentAsString();
                 o = gson.fromJson(responseString, HiveNodes.class);
-                reading = o.nodes.get(0).attributes;
-                reading.isValid = true;
             } catch (InterruptedException | TimeoutException | ExecutionException e) {
-                logger.warn("Failed to get thermostat reading: {}", e.getMessage());
-                return reading;
+                logger.warn("Failed to get nodes: {}", e.getMessage());
+                status.isValid = false;
+                return status;
             }
-            try {
-                // Get battery level
-                response = client
-                        .newRequest("https://api-prod.bgchprod.info:443/omnia/nodes/"
-                                + thing.getProperties().get("linkedDevice"))
-                        .method(HttpMethod.GET).header("Accept", "application/vnd.alertme.zoo-6.5+json")
-                        .header("Content-Type", "application/vnd.alertme.zoo-6.5+json")
-                        .header("X-Omnia-Client", "Openhab 2").header("X-Omnia-Access-Token", token)
-                        .timeout(DISCOVER_TIMEOUT_SECONDS, TimeUnit.SECONDS).send();
-
-                statusCode = response.getStatus();
-                if (statusCode != HttpStatus.OK_200) {
-                    // If it failed, log the error
-                    String statusLine = response.getStatus() + " " + response.getReason();
-                    logger.warn("Error while reading from Hive API: {}", statusLine);
-                    return reading;
-                }
-                responseString = response.getContentAsString();
-                o = gson.fromJson(responseString, HiveNodes.class);
-            } catch (InterruptedException | TimeoutException | ExecutionException e) {
-                logger.warn("Failed to get battery level: {}", e.getMessage());
-            }
-
-            reading.batteryLevel = o.nodes.get(0).attributes.batteryLevel;
-            return reading;
+            status.isValid = true;
         }
-        return reading;
+
+        // Loop through the nodes, adding the status details for each one as we go
+        if (o.nodes.size() > 0) {
+
+            for (HiveNode node : o.nodes) {
+                HiveDeviceReading reading = new HiveDeviceReading();
+                reading.deviceId = node.id;
+
+                if (node.nodeType.equals(THERMOSTAT_NODE_TYPE)
+                        && node.features.get("device_management_v1").get("productType").reportedValue
+                                .equals("HEATING")) {
+                    // This is a heating node
+                    reading.current = new DecimalType(
+                            node.features.get("temperature_sensor_v1").get("temperature").reportedValue.toString());
+                    reading.target = new DecimalType(
+                            node.features.get("heating_thermostat_v1").get("targetHeatTemperature").reportedValue
+                                    .toString());
+                    reading.heating = (node.features.get("heating_thermostat_v1")
+                            .get("operatingState").reportedValue == "HEAT");
+                    reading.override = node.features.get("heating_thermostat_v1")
+                            .get("temporaryOperatingModeOverride").reportedValue.equals("TRANSIENT");
+
+                    if (reading.override) {
+                        if (node.features.get("heating_thermostat_v1").get("operatingStateReason").reportedValue
+                                .equals("BM_INTERLOCK")) {
+                            reading.status = "TRV Calling For Heat";
+                            reading.overrideReadOnly = true;
+                        } else {
+                            reading.status = "Boost";
+                            LocalDateTime timeNow = LocalDateTime.now();
+                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
+                            LocalDateTime boostExpires = LocalDateTime.parse(
+                                    node.features.get("transient_mode_v1").get("endDatetime").reportedValue.toString(),
+                                    formatter);
+                            long minutesLeft = ChronoUnit.MINUTES.between(timeNow, boostExpires);
+                            reading.overrideRemaining = minutesLeft;
+                            reading.overrideReadOnly = false;
+                        }
+                    } else {
+                        reading.status = node.features.get("heating_thermostat_v1").get("operatingMode").reportedValue
+                                .toString();
+                    }
+
+                    status.readings.add(reading);
+
+                } else if (node.nodeType.equals(THERMOSTAT_NODE_TYPE)
+                        && node.features.get("device_management_v1").get("productType").reportedValue
+                                .equals("HOT_WATER")) {
+                    // This is a hot water node
+
+                } else if (node.nodeType.equals(THERMOSTATUI_NODE_TYPE)) {
+                    // This is a thermostat UI node
+
+                } else if (node.nodeType.equals(TRV_NODE_TYPE)) {
+
+                }
+            }
+        }
+
+        lastStatus = status;
+        lastStatusFetched = new Date();
+        gettingStatus = false;
+        return status;
     }
 
-    private void callClient(String setObject, ThingUID uid, String type) {
+    private void sendCommandToAPI(String setObject, ThingUID uid, String type) {
         try {
             ContentResponse response;
             response = client.newRequest("https://api-prod.bgchprod.info:443/omnia/nodes/" + uid.getId())
@@ -379,7 +483,7 @@ public class HiveBridgeHandler extends BaseBridgeHandler {
         if (online) {
             String setObject = "{\"nodes\": [{\"features\": {\"heating_thermostat_v1\" : {\"targetHeatTemperature\": {\"targetValue\": "
                     + f + "}}}}]}";
-            callClient(setObject, uid, "target temperature");
+            sendCommandToAPI(setObject, uid, "target temperature");
         }
     }
 

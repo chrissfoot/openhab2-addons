@@ -12,16 +12,15 @@
  */
 package org.openhab.binding.hive.internal.dto;
 
-import java.util.Map;
+import java.util.ArrayList;
 
 /**
  *
  * @author Chris Foot - Initial contribution
  */
 
-public class HiveNode {
-    public String id;
-    public String name;
-    public String nodeType;
-    public Map<String, Map<String, HiveFeature>> features;
+public class HiveCurrentStatus {
+
+    public ArrayList<HiveDeviceReading> readings;
+    public boolean isValid;
 }

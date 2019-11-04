@@ -12,15 +12,19 @@
 		<channels>
 			<channel id="currenttemperature" typeId="currenttemperature" />
 			<channel id="targettemperature" typeId="targettemperature" />
-			<channel id="boost" typeId="boost" />
+			<channel id="boostheating" typeId="boostheating" />
+			<channel id="boosthotwater" typeId="boosthotwater" />
+			<channel id="heatingstatus" typeId="heatingstatus" />
+			<channel id="hotwaterstatus" typeId="hotwaterstatus" />
 			<channel id="heatingon" typeId="heatingon" />
-			<channel id="hotwateron" typeId="hotwateron" />
-			<channel id="mode" typeId="mode" />
-			<channel id="boostremaining" typeId="boostremaining" />
+			<channel id="hotwateron" typeId="hotwateron" />			
+			<channel id="boostheatingremaining" typeId="boostheatingremaining" />
+			<channel id="boosthotwaterremaining" typeId="boosthotwaterremaining" />
 			<channel id="thermostatbattery" typeId="battery-level" />
 		</channels>
         <properties>
-            <property name="linkedDevice"></property>
+            <property name="heatingId"></property>
+            <property name="hotwaterId"></property>
         </properties>
         <representation-property>nodeId</representation-property>
 	</thing-type>
@@ -38,10 +42,16 @@
 		<category>Temperature</category>
 		<state pattern="%.1f %unit%" />
 	</channel-type>
-	<channel-type id="boost">
+	<channel-type id="boostheating">
         <item-type>Switch</item-type>
-        <label>Boost</label>
-        <description>Turn boost on</description>
+        <label>Heating Boost</label>
+        <description>Turn heating boost on</description>
+        <category>Valve</category>
+    </channel-type>
+        <channel-type id="boosthotwater">
+        <item-type>Switch</item-type>
+        <label>Hot Water Boost</label>
+        <description>Turn hot water boost on</description>
         <category>Valve</category>
     </channel-type>
 	<channel-type id="heatingon">
@@ -58,19 +68,32 @@
 		<category>Valve</category>
 		<state readOnly="true" />
 	</channel-type>
-	<channel-type id="mode">
+	<channel-type id="heatingstatus">
 		<item-type>String</item-type>
-		<label>Heating Mode</label>
-		<description>The current heating/hot water mode</description>
+		<label>Heating Status</label>
+		<description>The current heating status</description>
 		<category>Valve</category>
 		<state readOnly="true" />
 	</channel-type>
-	<channel-type id="boostremaining">
+	<channel-type id="hotwaterstatus">
+        <item-type>String</item-type>
+        <label>Hot Water Status</label>
+        <description>The current hot water status</description>
+        <category>Valve</category>
+        <state readOnly="true" />
+    </channel-type>
+	<channel-type id="boostheatingremaining">
         <item-type>Number</item-type>
-		<label>Remaining Boost Time</label>
-		<description>The time remaining until this boost ends</description>
+		<label>Remaining Heating Boost Time</label>
+		<description>The time remaining until this heating boost ends</description>
 		<category>Valve</category>
 	</channel-type>
+	<channel-type id="boosthotwateremaining">
+        <item-type>Number</item-type>
+        <label>Remaining Hot Water Boost Time</label>
+        <description>The time remaining until this hot water boost ends</description>
+        <category>Valve</category>
+    </channel-type>
 	<channel-type id="battery-level">
         <item-type>Number</item-type>
         <label>Battery Level</label>
